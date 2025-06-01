@@ -42,10 +42,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/funnydspy"
-Repository = "https://github.com/yourusername/funnydspy"
-Issues = "https://github.com/yourusername/funnydspy/issues"
-Documentation = "https://github.com/yourusername/funnydspy#readme"
+Homepage = "https://github.com/MaximeRivest/funnydspy"
+Repository = "https://github.com/MaximeRivest/funnydspy"
+Issues = "https://github.com/MaximeRivest/funnydspy/issues"
+Documentation = "https://github.com/MaximeRivest/funnydspy#readme"
 
 [tool.setuptools.packages.find]
 where = ["."]
