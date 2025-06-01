@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # %%
-from typing import NamedTuple, List
+from typing import NamedTuple, List, Literal
 from dataclasses import dataclass
 import funnydspy as fd
 import dspy
@@ -26,17 +26,17 @@ def structure_and_summarize(parent_headings: list[str],chunks: list[str]):
     """Structure and summarize the content chunks."""
     if len(chunks) <= 4 or len(parent_headings) >= 3: return base_writer(parent_headings, chunks)
     
-    chunk_gists = dspy.parrallel(summarizer)(
+    chunk_gists = dspy.Parallel(summarizer.module)(
               [{'parent_headings': parent_headings, 'chunk': c} for c in chunks])
     
     headers = heading_writer(parent_headings, chunk_gists)
 
     @fd.ChainOfThought
-    def classifier(parent_headings: list[str], chunk) -> Literal[headers]:
+    def classifier(parent_headings: list[str], chunk) -> str:
         """Classify the content headings into a category."""
         return topic
 
-    topics = dspy.parrallel(summarizer)(
+    topics = dspy.Parallel(classifier.module)(
               [{'parent_headings': parent_headings, 'chunk': c} for c in chunks])
     
     # group chunks by into their sections
@@ -46,7 +46,7 @@ def structure_and_summarize(parent_headings: list[str],chunks: list[str]):
     
     # recursively process each section as a collection of chunks
     prefix = '#' * (len(parent_headings) + 1) + ' '
-    summarized_sections = dspy.parrallel(structure_and_summarize)(
+    summarized_sections = dspy.Parallel(structure_and_summarize)(
         [{'parent_headings': parent_headings + [prefix + topic], 'chunks': section_chunks}
         for topic, section_chunks in sections.items() if section_chunks]
     )
@@ -54,5 +54,6 @@ def structure_and_summarize(parent_headings: list[str],chunks: list[str]):
     # combine the summarized sections into a single string
     return '\n\n'.join([parent_headings[-1]] + summarized_sections)
 
+#%%
 #Usage
 content = structure_and_summarize(['Welcome to funnydspy'], ['This is a test', 'This is a test'])
