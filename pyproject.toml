@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "funnydspy"
-version = "0.3.0"
-description = "Vanilla-Python ergonomics on top of DSPy - write plain functions/dataclasses and get DSPy modules"
+version = "0.4.0"
+description = "Vanilla-Python ergonomics on top of DSPy"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}

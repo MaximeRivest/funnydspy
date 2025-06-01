@@ -533,7 +533,28 @@ def funnier(mod, *, alias: str | None = None):
     Sig = mod.signature
 
     def _call(*a, _prediction: bool = False, **k):
-        ex = Example(**Signature.python_signature(Sig).bind_partial(*a, **k).arguments)
+        # Remove _prediction from kwargs if it exists (it's not part of the DSPy signature)
+        if "_prediction" in k:
+            raise TypeError("pass _prediction without the preceding * in positional/keyword mix")
+        
+        # Get the input field names in order
+        input_fields = list(Sig.input_fields.keys())
+        
+        # Convert positional arguments to keyword arguments
+        # Map positional args to input field names
+        for i, arg in enumerate(a):
+            if i < len(input_fields):
+                field_name = input_fields[i]
+                if field_name in k:
+                    raise TypeError(f"got multiple values for argument '{field_name}'")
+                k[field_name] = arg
+            else:
+                raise TypeError(f"too many positional arguments")
+        
+        # Create Example with only the input fields
+        input_kwargs = {name: k[name] for name in input_fields if name in k}
+        ex = Example(**input_kwargs)
+        
         kwargs = {kk: _to_text(vv) for kk, vv in dict(ex).items()}
         pred: dspy.Prediction = mod(**kwargs)
         if _prediction:

@@ -1,41 +1,77 @@
 # %%
 import funnydspy as fd
 import dspy
-import attachments as att
+from attachments import Attachments
+from attachments import __version__
+from datar import f
+from datar.tibble import tibble
+from datar.dplyr import mutate, select, arrange, filter, group_by, summarise, n
+print(__version__)
+
+# %%
+attachments_dsl = "[images: false][select: p,title,h1,h2,h3,h4,h5,h6][split: paragraphs]"
+a = Attachments("https://en.wikipedia.org/wiki/Artificial_intelligence" + attachments_dsl) 
 
 #%%
-dspy.configure(lm=dspy.LM('openai/gpt-4.1-nano'))
+@fd.Predict
+def count_ai_words(paragraph) -> float:
+    """Count the number of Artificial Intelligence or AI words in the paragraph"""
+    return ai_frequency
 
-# %%
-url = "https://en.wikipedia.org/wiki/Artificial_intelligence"
-res = att.attach(f"{url}[select: p]") | att.processors.webpage_to_llm | att.split.paragraphs
-
-
-
-@fd.ChainOfThought
-def classify(query: str, context: str) -> str: return answer
-
-answer = rag("What is the capital of France?", "France is a country in Europe.")
-print(answer)
-# %%
-
+#%%
 from typing import Literal
-emotions = ['happy', 'sad', 'angry', 'excited', 'fearful', 'disgusted', 'surprised']
+@fd.Predict
+def classify_paragraph_subject(paragraph) -> Literal['Yes', 'No']:
+    return is_main_subject_deep_learning
+#%%
 
-@fd.ChainOfThought  
-def classifier1(sentence: str) -> Literal[*emotions]:
-    return emotion
+#%%
+#dspy.configure(lm=dspy.LM('anthropic/claude-sonnet-4-20250514'))
+#dspy.configure(lm=dspy.LM('gemini/gemma-3-27b-it'))
+dspy.configure(lm=dspy.LM('gemini/gemini-2.0-flash-lite'))
+#%%
 
-# %%
-classifier1("I am happy")
-classifier1.module
-# %%
-from typing import Literal
+count_ai_words(a[1].text)
 
-@fd.ChainOfThought  
-def classifier2(sentence: str) -> Literal['happy', 'sad', 'angry', 'excited', 'fearful', 'disgusted', 'surprised']:
-    return emotion
+#%%
 
-classifier2("I am happy")
-classifier2.module
-# %%
+
+res = classify_paragraph_subject(a[0].text, _prediction=True)
+print(res)
+#%%
+res
+
+#%%
+
+
+df = tibble(paragraphs = [p.text for p in a[:20]])
+df
+
+#%%
+holder = []
+for p in a[:10]:
+    holder.append(classify_paragraph_subject(p.text, _prediction=True))
+
+holder
+
+#%%
+df1 = df >> mutate(is_main_subject_deep_learning = classify_paragraph_subject(f.paragraphs))
+df1
+
+#%%
+with dspy.context(lm=dspy.LM('gemini/gemma-3n-e4b-it')):
+    df2 = df1 >> mutate(resp_gemma = classify_paragraph_subject(f.paragraphs))
+
+df2
+
+#%%
+# use sonnet 4 to classify the paragraphs store in Ibis + duckdb
+
+# make is easy to evaluate base flash light on mimicking sonnet 4
+
+# optimize the same classification based on flash light
+
+# reevaluate easily and dplyr y
+
+# make the program funnier and apply to every rows with a mutate in Ibis.
+
