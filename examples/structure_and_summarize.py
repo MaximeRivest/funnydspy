@@ -1,8 +1,5 @@
-#!/usr/bin/env python3
-
-# %%
-from typing import NamedTuple, List, Literal
-from dataclasses import dataclass
+#%%
+from typing import List, Literal
 import funnydspy as fd
 import dspy
 
@@ -10,81 +7,73 @@ import dspy
 dspy.configure(lm=dspy.LM('openai/gpt-4.1-nano', cache=False))
 
 @fd.ChainOfThought
-def base_writer(parent_heading: list[str],
-                content_chunk):
-    """Turn into comprehensive but terse Markdown section.
-    Use only headings deeper than the parent_headings."""
+def base_writer(parent_headings: List[str], content_chunks: List[str]) -> str:
+    """Turn into comprehensive but terse Markdown section. Use only headings deeper than parent_headings."""
     return subsection
 
-@fd.Predict
-def summarizer(parent_headings: list[str], chunk): return gist
+@fd.Predict  
+def gist_producer(parent_headings: List[str], chunk: str) -> str:
+    """Extract key points from chunk."""
+    return gist
 
 @fd.ChainOfThought
-def heading_writer(parent_headings: list[str], chunk_gists: list[str]): return content_headings
+def header_producer(parent_headings: List[str], chunk_gists: List[str]) -> List[str]:
+    """Generate content headings from gists."""
+    return content_headings
 
-def structure_and_summarize(parent_headings: list[str],chunks: list[str]):
-    """Structure and summarize the content chunks."""
-    if len(chunks) <= 4 or len(parent_headings) >= 3: return base_writer(parent_headings, chunks)
+def structure_and_summarize(parent_headings: List[str], chunks: List[str]) -> str:
+    """Structure and summarize content chunks recursively."""
+    # 1. Base Case: If the work left is small, just write the section
+    if len(chunks) <= 4 or len(parent_headings) >= 3:
+        return base_writer(parent_headings, chunks)
     
-    parallel_executor = dspy.Parallel()
-    exec_pairs = [(summarizer.module, {'parent_headings': parent_headings, 'chunk': c}) for c in chunks]
-    chunk_gists_predictions = parallel_executor.forward(exec_pairs)
+    # 2. Summarize each chunk in parallel to build Table of Contents
+    parallel = dspy.Parallel()
+    gist_pairs = [(gist_producer.module, {'parent_headings': parent_headings, 'chunk': c}) for c in chunks]
+    chunk_gists = [pred.gist for pred in parallel.forward(gist_pairs)]
     
-    # Extract the actual gist values from the predictions
-    chunk_gists = [pred.gist if hasattr(pred, 'gist') else str(pred) for pred in chunk_gists_predictions]
+    # 3. Prepare next level of Table of Contents
+    headers = header_producer(parent_headings, chunk_gists)
+    print(headers)
     
-    headers_result = heading_writer(parent_headings, chunk_gists)
+    # 4. Create dynamic classifier with Literal headers and assign chunks
+    @fd.ChainOfThought  
+    def classifier(parent_headings: List[str], chunk: str) -> Literal[*headers]:
+        f"""Classify chunk into one of these topics: {headers}"""
+        return topic  # This will be constrained to headers via the docstring
     
-    # Extract headers from the result - it might be a Prediction object or a string/list
-    if hasattr(headers_result, 'content_headings'):
-        headers = headers_result.content_headings
-    elif isinstance(headers_result, list):
-        headers = headers_result
-    elif isinstance(headers_result, str):
-        # If it's a string, try to split it or treat as single header
-        headers = [h.strip() for h in headers_result.split(',') if h.strip()]
-    else:
-        headers = [str(headers_result)]
-
-    @fd.ChainOfThought
-    def classifier(parent_headings: list[str], chunk) -> str:
-        """Classify the content headings into a category."""
-        return topic
-
-    exec_pairs = [(classifier.module, {'parent_headings': parent_headings, 'chunk': c}) for c in chunks]
-    topics_predictions = parallel_executor.forward(exec_pairs)
+    topic_pairs = [(classifier.module, {'parent_headings': parent_headings, 'chunk': c}) for c in chunks]
+    topics = [pred.topic for pred in parallel.forward(topic_pairs)]
     
-    # Extract the actual topic values from the predictions
-    topics = [pred.topic if hasattr(pred, 'topic') else str(pred) for pred in topics_predictions]
-    
-    # group chunks by their classified topics (use all unique topics, not just headers)
-    all_topics = set(topics)  # Get all unique topics from classification
-    sections = {topic: [] for topic in all_topics}
-    
+    # 5. Group chunks into sections
+    sections = {topic: [] for topic in headers}
     for topic, chunk in zip(topics, chunks):
-        sections[topic].append(chunk)
+        if topic in sections:  # Only add if topic is in our headers
+            sections[topic].append(chunk)
     
-    # recursively process each section as a collection of chunks
-    prefix = '#' * (len(parent_headings) + 1) + ' '
-    exec_pairs = [(structure_and_summarize, {'parent_headings': parent_headings + [prefix + topic], 'chunks': section_chunks})
-                  for topic, section_chunks in sections.items() if section_chunks]
-    summarized_sections_predictions = parallel_executor.forward(exec_pairs)
+    # 6. Recursively process each section in parallel
+    prefix = "#" * (len(parent_headings) + 1) + " "
+    section_pairs = [
+        (structure_and_summarize, {'parent_headings': parent_headings + [prefix + topic], 'chunks': section_chunks})
+        for topic, section_chunks in sections.items() if section_chunks
+    ]
+    summarized_sections = parallel.forward(section_pairs)
     
-    # Extract the actual content from the predictions
-    summarized_sections = [pred if isinstance(pred, str) else str(pred) for pred in summarized_sections_predictions]
-    
-    # combine the summarized sections into a single string
-    return '\n\n'.join([parent_headings[-1]] + summarized_sections)
+    # 7. Collect sub-sections together
+    return "\n\n".join([parent_headings[-1]] + summarized_sections)
 
-#%%
 # %%
 import attachments as att
+
 url = "https://en.wikipedia.org/wiki/Artificial_intelligence"
 res = att.attach(f"{url}[select: p]") | att.processors.webpage_to_llm | att.split.paragraphs
 
-# %%
-content = structure_and_summarize([att.Attachments(url+"[select: title]").text],
-                                   [t.text for t in res[:10]])
+#%%
+content = structure_and_summarize(
+    [att.Attachments(url+"[select: title]").text],
+    [t.text for t in res[:10]]
+)
+print(content)
 
 # # %%
 # print(content)
@@ -116,3 +105,4 @@ content = structure_and_summarize([att.Attachments(url+"[select: title]").text],
 # A knowledge base is a body of knowledge represented in a form that can be used by a program. An ontology is the set of objects, relations, concepts, and properties used by a particular domain of knowledge.[23] Knowledge bases need to represent things such as objects, properties, categories, and relations between objects;[24] situations, events, states, and time;[25] causes and effects;[26] knowledge about knowledge (what we know about what other people know);[27] default reasoning (things that humans assume are true until they are told differently and will remain true even when other facts are changing);[28] and many other aspects and domains of knowledge.
 
 # ## Common Applications of Artificial Intelligence
+# %%
