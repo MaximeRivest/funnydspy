@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "funnydspy"
+version = "0.2.0"
+description = "Vanilla-Python ergonomics on top of DSPy - write plain functions/dataclasses and get DSPy modules"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "FunnyDSPy Contributors"},
+]
+keywords = ["dspy", "llm", "language-models", "ai", "machine-learning", "nlp"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "dspy-ai>=2.6.0",
+    "fastcore>=1.8.0",
+    "typing-extensions>=4.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0",
+    "pytest-cov",
+    "black",
+    "isort",
+    "flake8",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/funnydspy"
+Repository = "https://github.com/yourusername/funnydspy"
+Issues = "https://github.com/yourusername/funnydspy/issues"
+Documentation = "https://github.com/yourusername/funnydspy#readme"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["funnydspy*"]
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+
+[tool.isort]
+profile = "black"
+line_length = 88 
