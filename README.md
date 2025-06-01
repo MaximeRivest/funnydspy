@@ -141,6 +141,81 @@ analyze_optimized = fd.funnier(compiled_analyze)
 result = analyze_optimized([1, 5, 3, 8, 2], 4.0)
 ```
 
+### ⚡ Elegant Parallel Execution
+
+FunnyDSPy makes DSPy's parallel execution much more elegant and Pythonic with two approaches:
+
+#### 1. `fd.parallel()` - Direct parallel execution
+Works only with FunnyDSPy decorated functions:
+
+```python
+@fd.ChainOfThought
+def analyze_text(text: str, context: str) -> str:
+    """Analyze text in given context."""
+    return analysis
+
+# OLD VERBOSE DSPy SYNTAX:
+# parallel = dspy.Parallel()
+# pairs = [(analyze_text.module, {'text': t, 'context': ctx}) for t in texts]
+# results = [pred.analysis for pred in parallel.forward(pairs)]
+
+# ✨ NEW CLEAN FUNNYDSPY SYNTAX:
+results = fd.parallel(analyze_text, [
+    {'text': t, 'context': ctx} for t in texts
+])
+```
+
+#### 2. `fd.parallelize()` - DSPy-style parallelization (recommended)
+Works with any function, giving you the same experience as standard DSPy:
+
+```python
+@fd.ChainOfThought
+def analyze_text(text: str, context: str) -> str:
+    return analysis
+
+# Create a parallelizable version
+parallel_analyze = fd.parallelize(analyze_text)
+
+# Use it like in standard DSPy
+results = parallel_analyze([
+    {'text': t, 'context': ctx} for t in texts
+])
+```
+
+**Key advantage**: `fd.parallelize()` works with **any function**, including regular Python functions:
+
+```python
+def regular_function(x: int, y: int) -> int:
+    return x + y
+
+# This works! (executes sequentially for non-DSPy functions)
+parallel_func = fd.parallelize(regular_function)
+results = parallel_func([{'x': 1, 'y': 2}, {'x': 3, 'y': 4}])  # [3, 7]
+```
+
+#### Real-world recursive example (just like standard DSPy):
+```python
+def structure_and_summarize(parent_headings: List[str], chunks: List[str]) -> str:
+    # ... base case ...
+    
+    # Parallelize DSPy functions
+    produce_gist = fd.parallelize(gist_producer)
+    chunk_gists = produce_gist([{'parent_headings': parent_headings, 'chunk': c} for c in chunks])
+    
+    # Even parallelize the recursive function itself!
+    parallel_structure = fd.parallelize(structure_and_summarize)
+    summarized_sections = parallel_structure([
+        {'parent_headings': parent_headings + [prefix + topic], 'chunks': section_chunks}
+        for topic, section_chunks in sections.items() if section_chunks
+    ])
+    
+    return "\n\n".join([parent_headings[-1]] + summarized_sections)
+```
+
+#### Summary:
+- **`fd.parallel(func, inputs)`**: Direct parallel execution (FunnyDSPy functions only)
+- **`fd.parallelize(func)`**: Creates parallelizable version (any function, DSPy-style API)
+
 ## 📚 Documentation
 
 ### Decorators

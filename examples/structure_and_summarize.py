@@ -12,25 +12,21 @@ def base_writer(parent_headings: List[str], content_chunks: List[str]) -> str:
     return subsection
 
 @fd.Predict  
-def gist_producer(parent_headings: List[str], chunk: str) -> str:
-    """Extract key points from chunk."""
-    return gist
+def gist_producer(parent_headings: List[str], chunk: str) -> str: return gist
 
 @fd.ChainOfThought
-def header_producer(parent_headings: List[str], chunk_gists: List[str]) -> List[str]:
-    """Generate content headings from gists."""
+def header_producer(parent_headings: List[str], chunk_gists: List[str]) -> List[str]: 
     return content_headings
 
 def structure_and_summarize(parent_headings: List[str], chunks: List[str]) -> str:
-    """Structure and summarize content chunks recursively."""
     # 1. Base Case: If the work left is small, just write the section
-    if len(chunks) <= 4 or len(parent_headings) >= 3:
+    if len(chunks) <= 3 or len(parent_headings) >= 2:
         return base_writer(parent_headings, chunks)
     
-    # 2. Summarize each chunk in parallel to build Table of Contents
-    parallel = dspy.Parallel()
-    gist_pairs = [(gist_producer.module, {'parent_headings': parent_headings, 'chunk': c}) for c in chunks]
-    chunk_gists = [pred.gist for pred in parallel.forward(gist_pairs)]
+    # 2. Summarize each chunk in parallel using parallelize()
+    chunk_gists = fd.parallelize(gist_producer)([
+        {'parent_headings': parent_headings, 'chunk': c} for c in chunks
+    ])
     
     # 3. Prepare next level of Table of Contents
     headers = header_producer(parent_headings, chunk_gists)
@@ -38,12 +34,11 @@ def structure_and_summarize(parent_headings: List[str], chunks: List[str]) -> st
     
     # 4. Create dynamic classifier with Literal headers and assign chunks
     @fd.ChainOfThought  
-    def classifier(parent_headings: List[str], chunk: str) -> Literal[*headers]:
-        f"""Classify chunk into one of these topics: {headers}"""
-        return topic  # This will be constrained to headers via the docstring
+    def classifier(parent_headings: List[str], chunk: str) -> Literal[*headers]: return topic
     
-    topic_pairs = [(classifier.module, {'parent_headings': parent_headings, 'chunk': c}) for c in chunks]
-    topics = [pred.topic for pred in parallel.forward(topic_pairs)]
+    topics = fd.parallelize(classifier)([
+        {'parent_headings': parent_headings, 'chunk': c} for c in chunks
+    ])
     
     # 5. Group chunks into sections
     sections = {topic: [] for topic in headers}
@@ -51,13 +46,13 @@ def structure_and_summarize(parent_headings: List[str], chunks: List[str]) -> st
         if topic in sections:  # Only add if topic is in our headers
             sections[topic].append(chunk)
     
-    # 6. Recursively process each section in parallel
+    # 6. Recursively process each section in parallel using parallelize()
     prefix = "#" * (len(parent_headings) + 1) + " "
-    section_pairs = [
-        (structure_and_summarize, {'parent_headings': parent_headings + [prefix + topic], 'chunks': section_chunks})
+    parallel_structure_and_summarize = fd.parallelize(structure_and_summarize)
+    summarized_sections = parallel_structure_and_summarize([
+        {'parent_headings': parent_headings + [prefix + topic], 'chunks': section_chunks}
         for topic, section_chunks in sections.items() if section_chunks
-    ]
-    summarized_sections = parallel.forward(section_pairs)
+    ])
     
     # 7. Collect sub-sections together
     return "\n\n".join([parent_headings[-1]] + summarized_sections)
@@ -71,7 +66,7 @@ res = att.attach(f"{url}[select: p]") | att.processors.webpage_to_llm | att.spli
 #%%
 content = structure_and_summarize(
     [att.Attachments(url+"[select: title]").text],
-    [t.text for t in res[:10]]
+    [t.text for t in res[:4]]
 )
 print(content)
 

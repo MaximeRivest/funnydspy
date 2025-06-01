@@ -21,7 +21,7 @@ and optimisers keep working.
   (expecting a plain ``Stats`` instance) continues to work unchanged.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 __author__ = "FunnyDSPy Contributors"
 __email__ = ""
 __description__ = "Vanilla-Python ergonomics on top of DSPy"
@@ -692,5 +692,171 @@ __all__ = [
     "ReAct",
     "register",
     "funnier",
+    "parallel",
+    "parallelize",
     "__version__",
 ]
+
+# -----------------------------------------------------------------------------
+# Simple parallel execution utility
+# -----------------------------------------------------------------------------
+
+def parallel(func, inputs_list):
+    """Execute func in parallel for each input set in inputs_list.
+    
+    Args:
+        func: A FunnyDSPy function (decorated with @fd.Predict, @fd.ChainOfThought, etc.)
+        inputs_list: List of input dictionaries
+        
+    Returns:
+        List of results from parallel execution
+        
+    Example:
+        # Instead of:
+        parallel = dspy.Parallel()
+        pairs = [(func.module, {'x': x, 'y': y}) for x, y in data]
+        results = [pred.result for pred in parallel.forward(pairs)]
+        
+        # Use:
+        results = fd.parallel(func, [{'x': x, 'y': y} for x, y in data])
+        
+    Note:
+        This only works with FunnyDSPy decorated functions (@fd.Predict, @fd.ChainOfThought, etc.).
+        For regular Python functions, you cannot use parallel execution with DSPy.
+    """
+    if not inputs_list:
+        return []
+    
+    # Check if function has the required .module attribute (FunnyDSPy decorated function)
+    if not hasattr(func, 'module'):
+        if callable(func):
+            # This is a regular Python function - we can't parallelize it with DSPy
+            raise TypeError(
+                f"fd.parallel() only works with FunnyDSPy decorated functions (@fd.Predict, @fd.ChainOfThought, etc.). "
+                f"The function '{func.__name__}' appears to be a regular Python function. "
+                f"To use parallel execution, the function must be decorated with a FunnyDSPy decorator."
+            )
+        else:
+            raise TypeError(f"Expected a FunnyDSPy function, got {type(func)}")
+    
+    # Build pairs for dspy.Parallel
+    pairs = [(func.module, inp) for inp in inputs_list]
+    predictions = dspy.Parallel().forward(pairs)
+    
+    # Extract the actual return values from predictions
+    results = []
+    for pred in predictions:
+        pred_dict = dict(pred)
+        
+        # Get the function's signature to know what output fields to extract
+        if hasattr(func, 'signature') and func.signature.output_fields:
+            sig = func.signature
+            output_fields = sig.output_fields
+            
+            # For functions with a single output field, extract just that value
+            if len(output_fields) == 1:
+                field_name = next(iter(output_fields.keys()))
+                if field_name in pred_dict:
+                    # Apply type conversion using the function's conversion logic
+                    field_type = output_fields[field_name].annotation
+                    raw_value = pred_dict[field_name]
+                    converted_value = _from_text(raw_value, field_type)
+                    results.append(converted_value)
+                else:
+                    # Fallback if field not found
+                    results.append(next(iter(pred_dict.values())) if pred_dict else None)
+            else:
+                # Multiple outputs - apply the same conversion logic as in funky()
+                post = {}
+                ret_ann = inspect.signature(func.__call__).return_annotation
+                
+                # Handle dataclass returns
+                if dataclasses.is_dataclass(ret_ann):
+                    pref = f"{ret_ann.__name__}_"
+                    dataclass_post = {}
+                    for kk, vv in pred_dict.items():
+                        if kk.startswith(pref):
+                            raw = kk[len(pref):]
+                            if kk in output_fields:
+                                ann = output_fields[kk].annotation
+                                dataclass_post[raw] = _from_text(vv, ann)
+                    results.append(ret_ann(**dataclass_post))
+                else:
+                    # Convert all output fields
+                    for kk, vv in pred_dict.items():
+                        if kk in output_fields:
+                            ann = output_fields[kk].annotation
+                            post[kk] = _from_text(vv, ann)
+                    
+                    # Handle different return types
+                    if isinstance(ret_ann, type) and issubclass(ret_ann, tuple) and hasattr(ret_ann, "_fields"):
+                        results.append(ret_ann(*[post[n] for n in ret_ann._fields]))
+                    elif typing.get_origin(ret_ann) is tuple:
+                        results.append(tuple(post[n] for n in output_fields if n in post))
+                    elif len(post) == 1:
+                        results.append(next(iter(post.values())))
+                    else:
+                        results.append(post)
+        else:
+            # Fallback for functions without proper signature
+            if len(pred_dict) == 1:
+                results.append(next(iter(pred_dict.values())))
+            else:
+                results.append(pred_dict)
+                
+    return results
+
+def parallelize(func):
+    """Create a parallelizable version of any function (DSPy-style).
+    
+    This returns a function that can be called with a list of input dictionaries
+    to execute the original function in parallel for each input.
+    
+    Args:
+        func: Any function (FunnyDSPy decorated or regular Python function)
+        
+    Returns:
+        A function that takes a list of input dictionaries and returns parallel results
+        
+    Example:
+        # For FunnyDSPy functions:
+        @fd.Predict
+        def classify(text: str) -> str: return category
+        
+        parallel_classify = fd.parallelize(classify)
+        results = parallel_classify([{'text': 'doc1'}, {'text': 'doc2'}])
+        
+        # For regular Python functions:
+        def process_data(x: int, y: int) -> int:
+            return x + y
+            
+        parallel_process = fd.parallelize(process_data) 
+        results = parallel_process([{'x': 1, 'y': 2}, {'x': 3, 'y': 4}])
+    """
+    
+    def parallel_executor(inputs_list):
+        if not inputs_list:
+            return []
+            
+        # Check if this is a FunnyDSPy decorated function
+        if hasattr(func, 'module'):
+            # Use the optimized DSPy parallel execution
+            return parallel(func, inputs_list)
+        else:
+            # For regular Python functions, use sequential execution
+            # (Could be extended to use multiprocessing if needed)
+            results = []
+            for inp in inputs_list:
+                if isinstance(inp, dict):
+                    result = func(**inp)
+                else:
+                    # Handle non-dict inputs by trying to call directly
+                    result = func(inp)
+                results.append(result)
+            return results
+    
+    return parallel_executor
+
+# -----------------------------------------------------------------------------
+# Enhanced function wrapper with parallel support
+# -----------------------------------------------------------------------------
