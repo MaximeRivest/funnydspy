@@ -8,19 +8,47 @@ Shows how to define typed return values and use different DSPy modules (cot vs p
 # %%
 from typing import NamedTuple, List
 from dataclasses import dataclass
+
+
+
 import funnydspy as fd
 import dspy
+from attachments.dspy import Attachments
 
-# Configure DSPy with OpenAI model
+turn_webpage_screenshot_off = "[images: false]"
+cssselect = "[select: p,title,h1,h2,h3,h4,h5,h6]"
+a = Attachments("https://en.wikipedia.org/wiki/Artificial_intelligence" \
+                + turn_webpage_screenshot_off + cssselect)
+
 dspy.configure(lm=dspy.LM('openai/gpt-4.1-nano', cache=False))
 
-
-#%%
-# support concise syntax
+# This defines the signature of the AI function. The replaces prompts.
 @fd.Predict
-def rag(question,response): return response
+def rag(question,context: Attachments): return response
 
-rag("The number is 1", "What is the number?")
+rag("What are the first 10 words of 'main' text?", a)
+#> 'The first 10 words of the \'main\' text are: "Artificial...'
+
+
+
+
+import funnydspy as fd
+import dspy
+from attachments.dspy import Attachments
+
+turn_webpage_screenshot_off = "[images: false]"
+cssselect = "[select: p,title,h1,h2,h3,h4,h5,h6]"
+a = Attachments("https://en.wikipedia.org/wiki/Artificial_intelligence" \
+                + turn_webpage_screenshot_off + cssselect)
+
+dspy.configure(lm=dspy.LM('openai/gpt-4.1-nano', cache=False))
+
+# This defines the signature of the AI function. The replaces prompts.
+@fd.Predict
+def rag(question,context: Attachments): return response
+
+rag("What are the first 10 words of 'main' text?", a)
+#> 'The first 10 words of the \'main\' text are: "Artificial...'
 
 
 
@@ -35,7 +63,10 @@ class analyse_og(dspy.Signature):
     Stats_above_threshold: List[float] = dspy.OutputField(description="values > threshold")
 
 dspy.Predict(analyse_og)(numbers=[3, 7, 1, 9], threshold=4)
-
+#> Prediction(
+#     Stats_mean_value=5.0,
+#     Stats_above_threshold=[7.0, 9.0]
+# )
 
 #%%
 # ==============================================
@@ -48,29 +79,33 @@ class Stats:
     """Structured output for analysis results."""
     mean_value: float
     above_threshold: List[float]
+from typing import Tuple
 
 
 @fd.funky
-def analyse1(numbers: List[float],
-            threshold: float) -> Stats:
+def analyse10(numbers, threshold):
     """
     Analyze numbers and return structured statistics.
 
     Parameters
     ----------
-    numbers: values to summarise
-    threshold: split point
+    numbers: List[float] values to summarise
+    threshold: float split point
 
     Returns
     -------
-    Stats.mean_value: average of numbers
-    Stats.above_threshold: values > threshold
+    mean_value: float average of numbers
+    above_threshold: List[float] values > threshold
     """
-    return Stats
+    pass
 
-analyse1([3, 7, 1, 9], 4)
-
-
+analyse10([3, 7, 1, 9], 4)
+#> Stats(mean_value=5.0, above_threshold=[7.0, 9.0])
+analyse([3, 7, 1, 9], 4, _prediction=True)
+#> Prediction(
+#     Stats_mean_value=5.0,
+#     Stats_above_threshold=[7.0, 9.0]
+# )
 
 #%%
 #==============================================
@@ -78,31 +113,28 @@ analyse1([3, 7, 1, 9], 4)
 #==============================================
 @dataclass
 class Stats:
-    """Structured output for analysis results."""
     mean_value: float # values to summarise
     above_threshold: List[float] # values > threshold
 
 
 @fd.Predict
-def analyse2(numbers: List[float], # values to summarise and I have a lot to say about this 
+def analyse(numbers: List[float], # values to summarise and I have a lot to say about this 
             threshold: float # split point
             ) -> Stats:
     """
     Analyze numbers and return structured statistics.
     """
     return Stats
-#%%
-analyse2([3, 7, 1, 9], 4, _prediction=True)
-#%%
-# expected result:
-# Prediction(
+
+analyse([3, 7, 1, 9], 4)
+#> Stats(mean_value=5.0, above_threshold=[7.0, 9.0])
+analyse([3, 7, 1, 9], 4, _prediction=True)
+#> Prediction(
 #     Stats_mean_value=5.0,
 #     Stats_above_threshold=[7.0, 9.0]
 # )
 
-# ✅ NOW WORKING! Fixed by adding return type annotation -> Stats
 
-analyse2([3, 7, 1, 9], 4)
 # expected result:
 # Stats(mean_value=5.0, above_threshold=[7.0, 9.0])
 
@@ -114,7 +146,7 @@ analyse2([3, 7, 1, 9], 4)
 #==============================================
 
 @fd.ChainOfThought
-def analyse3(numbers: List[float], # values to summarise and I have a lot to say about this 
+def analyse(numbers: List[float], # values to summarise and I have a lot to say about this 
             threshold: float # split point
             ) -> Stats:
     """
@@ -122,14 +154,18 @@ def analyse3(numbers: List[float], # values to summarise and I have a lot to say
     """
     class Stats(NamedTuple): mean_value: float; above_threshold: List[float]
     return Stats
-#%%
-analyse3([3, 7, 1, 9], 4)
-#%%
-analyse3([3, 7, 1, 9], 4, _prediction=True)
+
+analyse([3, 7, 1, 9], 4)
+#> Stats(mean_value=5.0, above_threshold=[7.0, 9.0])
+analyse([3, 7, 1, 9], 4, _prediction=True)
+#> Prediction(
+#     Stats_mean_value=5.0,
+#     Stats_above_threshold=[7.0, 9.0]
+# )
 
 #%%
 @fd.ChainOfThought
-def analyse4(
+def analyse(
     nums: List[float],  # list of numbers
     threshold: float   # split point
 ) -> tuple[float, List[float]]:
@@ -139,11 +175,15 @@ def analyse4(
     mean = "The average"
     above = "Numbers above threshold"
     return mean, above                       # body never runs
-#%%
-analyse4([3, 7, 1, 9], 4)
-#%%
-analyse4([3, 7, 1, 9], 4, _prediction=True)
 
+analyse([3, 7, 1, 9], 4)
+#> Stats(mean=5.0, above=[7.0, 9.0])
+analyse([3, 7, 1, 9], 4, _prediction=True)
+#> Prediction(
+#     reasoning='The list of numbers provide...'
+#     Stats_mean_value=5.0,
+#     Stats_above_threshold=[7.0, 9.0]
+# )
 
 
 

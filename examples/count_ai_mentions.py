@@ -12,7 +12,8 @@ dspy.configure(lm=dspy.LM('gemini/gemini-2.0-flash-lite'))
 # This define the signature of the AI function. The replaces prompts.
 @fd.Predict
 def count_flash_response(paragraph) -> float:
-    """Count the number of Artificial Intelligence or AI words in the paragraph"""
+    """Count the number times the word 'Artificial Intelligence'
+    or 'AI' appears in the paragraph"""
     return mention_frequency
 
 # This fetches the AI wikipedia page and splits it into paragraphs
